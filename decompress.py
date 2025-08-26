@@ -45,41 +45,95 @@ class File():
 
 
 debug = False
+repack = False
 if len(sys.argv)>1:
-    if sys.argv[1] == "debug":
-        debug = True
+    for arg in sys.argv:
+        if '-' in arg:
+            option = arg.split('-')[1]
+            if option == "debug" or option == "d":
+                debug = True
+            if option == "repack" or option == "r":
+                repack = True
 
-with fopen("game/karakuri.fhd", 'rb') as fhd:
-    bin = fopen("game/karakuri.bin", 'rb')
+if not repack:
+    ftypes = {}
+    with fopen("game/karakuri.fhd", 'rb') as fhd:
+        bin = fopen("game/karakuri.bin", 'rb')
 
-    fhd.seek(0x8)
-    size = to_int(fhd,4)
-    filecount = to_int(fhd,4)
-    fhd.seek(0x10)
-    offsets = []
-    offsets.append(to_int(fhd,4)) # 30 - filesize
-    offsets.append(to_int(fhd,4)) # 66d4 - filetypes
-    offsets.append(to_int(fhd,4)) # 8080 - unk
-    offsets.append(to_int(fhd,4)) # 14dc8 - filename offsets
-    offsets.append(to_int(fhd,4)) # e724 - offset/0x800
+        fhd.seek(0x8)
+        size = to_int(fhd,4)
+        filecount = to_int(fhd,4)
+        fhd.seek(0x10)
+        offsets = []
+        offsets.append(to_int(fhd,4)) # 30 - filesize
+        offsets.append(to_int(fhd,4)) # 66d4 - filetypes
+        offsets.append(to_int(fhd,4)) # 8080 - unk
+        offsets.append(to_int(fhd,4)) # 14dc8 - filename offsets
+        offsets.append(to_int(fhd,4)) # e724 - offset/0x800
 
 
 
-    for i in range(0,filecount):
-        struct = []
+        for i in range(0,filecount):
+            struct = []
 
-        file = File()
+            file = File()
 
-        fhd.seek(offsets[0]+4*i)
-        file.size = to_int(fhd,4)
+            fhd.seek(offsets[0]+4*i)
+            file.size = to_int(fhd,4)
 
-        fhd.seek(offsets[1]+1*i)
-        file.type = to_int(fhd,1)
+            fhd.seek(offsets[1]+1*i)
+            file.type = to_int(fhd,1)
 
-        fhd.seek(offsets[2]+4*i)
-        file.unk = to_int(fhd,4)
+            fhd.seek(offsets[2]+4*i)
+            file.unk = to_int(fhd,4)
 
-        fhd.seek(offsets[3]+8*i) 
+            fhd.seek(offsets[3]+8*i) 
+            path = to_int(fhd,4)
+            name = to_int(fhd,4)
+
+            fhd.seek(path)
+            file.path = readString(fhd).split("../../")[1]
+
+            fhd.seek(name) 
+            file.name = readString(fhd)
+
+            fhd.seek(offsets[4]+4*i)
+            file.offset = to_int(fhd,4)
+            
+            if debug:
+                print("struct:",hex_f(file.size),hex(file.type),hex_f(file.unk),hex_f(file.offset),file.path,file.name)
+                if file.type not in ftypes and "." in file.name:
+                    ftypes[file.type] = file
+
+            else:
+                os.makedirs(ROOT+file.path, exist_ok=True)
+                out = fopen(ROOT+file.path+file.name,"wb")
+                if file.size < 0xffffff00:
+                    bin.seek(file.offset*0x800)
+                    out.write(bin.read(file.size))
+                    out.close()
+                    print("Wrote",file.path,end="")
+                    print(file.name,"size:",hex(file.size))
+                else:
+                    print("Wrote empty",file.path,end="")
+                    print(file.name)
+        if debug:
+            print("\n")
+            for type in ftypes.values():
+                print("types:   ",hex(type.type),"  ",type.path,end="")
+                print(type.name)
+
+        fhd.close()
+        bin.close()
+        
+else:
+    print("not yet implemented!")
+    quit()
+    '''with fopen("game/karakuri.fhd", 'rb') as fhd:
+
+        fhd.seek(0x1c)
+        pathptr = to_int(fhd,4)
+
         path = to_int(fhd,4)
         name = to_int(fhd,4)
 
@@ -89,31 +143,7 @@ with fopen("game/karakuri.fhd", 'rb') as fhd:
         fhd.seek(name) 
         file.name = readString(fhd)
 
-        fhd.seek(offsets[4]+4*i)
-        file.offset = to_int(fhd,4)
-        
-        if debug:
-            print("struct:",hex_f(file.size),hex(file.type),hex_f(file.unk),hex_f(file.offset),file.path,file.name)
-            
-        else:
-            os.makedirs(ROOT+file.path, exist_ok=True)
-            out = fopen(ROOT+file.path+file.name,"wb")
-            if file.size < 0xffffff00:
-                bin.seek(file.offset*0x800)
-                out.write(bin.read(file.size))
-                out.close()
-                print("Wrote",file.path,end="")
-                print(file.name,"size:",hex(file.size))
-            else:
-                print("Wrote empty",file.path,end="")
-                print(file.name)
-
-    fhd.close()
-    bin.close()
-    
-
-        
-
-
-    
-
+       files = []
+        for root, _, files in os.walk(ROOT):
+            for file in files:
+                file = fopen(os.path.join(root,file))'''
