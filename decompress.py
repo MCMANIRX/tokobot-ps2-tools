@@ -1,8 +1,47 @@
 import os
 import sys
+import struct
 
 
+GAME_ROOT = "game/"
 ROOT = "karakuri/"
+OUT_ROOT = "karakuri_new/"
+
+
+class File():
+    size = 0
+    offset = 0
+    type = 0
+    unk = 0
+    path = ""
+    name = ""
+    poff = 0
+    noff = 0
+
+typeToByte = {
+        "hxd" : 0x0,
+        "at3" : 0x1,
+        "spk" : 0x2,
+        "mmg" : 0x3,
+        "pak" : 0x4,
+        "phf" : 0x5,
+        "emd" : 0x6,
+        "tm2" : 0x7,
+        "guc" : 0x9,
+        "mpk" : 0xb,
+        "gmo" : 0xd,
+        "epk" : 0xf,
+        "phd" : 0x12,
+        "pbd" : 0x13,
+        "ico" : 0x14,
+        "efp" : 0x16,
+        "obj" : 0x17,
+        "gim" : 0x18,
+        "rct" : 0x19,
+        "pss" : 0x1c,
+}
+
+
 
 def to_int(f,sz):
     return int.from_bytes(f.read(sz),byteorder="little")
@@ -34,15 +73,7 @@ def fopen(fname,mode):
         quit()
     return file
 
-class File():
-    size = 0
-    offset = 0
-    type = 0
-    unk = 0
-    path = ""
-    name = ""
-
-
+# entry
 
 debug = False
 repack = False
@@ -57,8 +88,8 @@ if len(sys.argv)>1:
 
 if not repack:
     ftypes = {}
-    with fopen("game/karakuri.fhd", 'rb') as fhd:
-        bin = fopen("game/karakuri.bin", 'rb')
+    with fopen(GAME_ROOT+"karakuri.fhd", 'rb') as fhd:
+        bin = fopen(GAME_ROOT+"karakuri.bin", 'rb')
 
         fhd.seek(0x8)
         size = to_int(fhd,4)
@@ -67,7 +98,7 @@ if not repack:
         offsets = []
         offsets.append(to_int(fhd,4)) # 30 - filesize
         offsets.append(to_int(fhd,4)) # 66d4 - filetypes
-        offsets.append(to_int(fhd,4)) # 8080 - unk
+        offsets.append(to_int(fhd,4)) # 8080 - unk (file size * 2)
         offsets.append(to_int(fhd,4)) # 14dc8 - filename offsets
         offsets.append(to_int(fhd,4)) # e724 - offset/0x800
 
@@ -108,7 +139,7 @@ if not repack:
             else:
                 os.makedirs(ROOT+file.path, exist_ok=True)
                 out = fopen(ROOT+file.path+file.name,"wb")
-                if file.size < 0xffffff00:
+                if file.size < 0xffffff00: # detect null(?)
                     bin.seek(file.offset*0x800)
                     out.write(bin.read(file.size))
                     out.close()
@@ -119,31 +150,173 @@ if not repack:
                     print(file.name)
         if debug:
             print("\n")
+            print("typeToByte = {")
             for type in ftypes.values():
-                print("types:   ",hex(type.type),"  ",type.path,end="")
-                print(type.name)
+                print(f"\t\"{type.name.split('.')[1]}\" : {hex(type.type)},")
+                #print("types:   ",hex(type.type),"  ",type.path,end="")
+               # print(type.name)
+            print("}")
 
         fhd.close()
         bin.close()
         
 else:
-    print("not yet implemented!")
-    quit()
-    '''with fopen("game/karakuri.fhd", 'rb') as fhd:
+    os.makedirs(OUT_ROOT, exist_ok=True)
+
+    files = []
+    totalsize = 0
+    bin_ptr = 0
+    fhd_ptr = 0
+
+    size_ptr = 0x30
+    types_ptr = 0
+    unk_ptr = 0
+    name_ptr = 0
+    offsets_ptr = 0
+
+    new_bin = fopen(OUT_ROOT+"KARAKURI.BIN","wb")
+    new_fhd = fopen(OUT_ROOT+"KARAKURI.FHD","wb")
+
+    # Naive approach for testing
+    with fopen("game/karakuri.fhd", 'rb') as fhd:
+
+        fhd.seek(0xc)
+        filecount = to_int(fhd,4)
 
         fhd.seek(0x1c)
-        pathptr = to_int(fhd,4)
+        pathpathptr = to_int(fhd,4)
+        fhd.seek(pathpathptr)
+        last_file = File()
+        for i in range(0,filecount):
+            file = File()
+            file.size =0xffffffff
+            file.type = 0xff
+            file.offset = 0xfffffffe
 
-        path = to_int(fhd,4)
-        name = to_int(fhd,4)
+            fhd.seek(pathpathptr+i*8)
 
-        fhd.seek(path)
-        file.path = readString(fhd).split("../../")[1]
+            pathptr = to_int(fhd,4)
+            nameptr = to_int(fhd,4)
 
-        fhd.seek(name) 
-        file.name = readString(fhd)
+            fhd.seek(pathptr)
+            file.path = readString(fhd).split("../../")[1]
+            fhd.seek(nameptr) 
+            file.name = readString(fhd)
 
-       files = []
+            fbuf = fopen(ROOT+file.path+file.name,"rb")
+            file.size = os.path.getsize(ROOT+file.path+file.name)
+            if file.size == 0:
+                file.size =0xffffffff
+            
+            ext = file.name.split(".")
+            if len(ext)>1 and file.size < 0xffffff00:
+                file.type = typeToByte[ext[1]]
+
+                offset = totalsize
+                blocks = 0
+                print(totalsize)
+                while True:
+                    blocks+=1
+                    if blocks*0x800 > file.size:
+                        offset+=blocks*0x800
+                        break
+                print(blocks,"blokk",hex(totalsize),hex(file.size))
+                file.offset = offset
+                data = fbuf.read(file.size)
+
+                new_bin.seek(file.offset)
+                file.offset = int(file.offset/0x800)
+                print(f"Writing {file.path}{file.name} of size {hex(file.size)} to {hex(new_bin.tell())}...")
+                new_bin.write(data)
+
+                files.append(file)
+                last_file = file
+                totalsize+=file.size
+
+
+        new_fhd.seek(size_ptr)
+
+
+        print("Writing new FHD sizes...")
+        for file in files:
+            new_fhd.write(struct.pack("<I",file.size))
+        
+
+        types_ptr = new_fhd.tell()
+        print("Writing new FHD types...")
+        for file in files:
+            new_fhd.write(struct.pack("<B",file.type)) 
+
+        while new_fhd.tell()%0x10!=0:
+            new_fhd.seek(new_fhd.tell()+1)
+
+        unk_ptr = new_fhd.tell()
+        print("Writing new FHD unks...")           
+        for file in files:
+            new_fhd.write(struct.pack("<I",file.size*2 if file.size != 0xffffffff else 0xffffffff))  
+
+        offsets_ptr = new_fhd.tell()
+        for i in range(0,filecount):
+            new_fhd.write(struct.pack("<I",0xaa))  # debug
+
+        paths_ptr = new_fhd.tell()
+        print("Writing new FHD paths and names...")
+        for i in range(0,filecount*2):
+            new_fhd.write(struct.pack("<I",0xea))  # debug
+
+        paths = {}
+        for file in files:
+            if(file.path not in paths):
+                paths[file.path] = new_fhd.tell()
+                new_fhd.write(("../../"+file.path).encode("utf-8") + b'\x00') 
+            file.poff = paths[file.path]
+        
+
+        for file in files:
+            file.noff = new_fhd.tell()
+            new_fhd.write(file.name.encode("utf-8") + b'\x00')
+        totalsize = new_fhd.tell()
+
+        new_fhd.seek(paths_ptr)
+        for file in files:
+
+            new_fhd.write(struct.pack("<I",file.poff))   
+            new_fhd.write(struct.pack("<I",file.noff))   
+
+
+        print("Writing new FHD file offsets...")
+        new_fhd.seek(offsets_ptr)
+        for file in files:
+
+            new_fhd.write(struct.pack("<I",file.offset))   
+        
+        print("Writing header information...")
+
+        new_fhd.seek(0x1)
+        new_fhd.write("DHFd".encode("utf-8"))
+
+        new_fhd.seek(0x8)
+        new_fhd.write(struct.pack("<I",totalsize))
+        new_fhd.write(struct.pack("<I",len(files)))
+
+        new_fhd.write(struct.pack("<I",size_ptr))
+        new_fhd.write(struct.pack("<I",types_ptr))
+        new_fhd.write(struct.pack("<I",unk_ptr))
+        new_fhd.write(struct.pack("<I",paths_ptr))
+        new_fhd.write(struct.pack("<I",offsets_ptr))
+        new_fhd.write(struct.pack("<I",0x1))
+
+
+
+        print("Done.")
+
+        new_fhd.close()
+        new_bin.close()
+        fhd.close()
+
+
+        '''files = []
         for root, _, files in os.walk(ROOT):
             for file in files:
                 file = fopen(os.path.join(root,file))'''
+
