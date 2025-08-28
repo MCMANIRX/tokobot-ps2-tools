@@ -100,7 +100,7 @@ if not repack:
         offsets.append(to_int(fhd,4)) # 66d4 - filetypes
         offsets.append(to_int(fhd,4)) # 8080 - unk (file size * 2)
         offsets.append(to_int(fhd,4)) # 14dc8 - filename offsets
-        offsets.append(to_int(fhd,4)) # e724 - offset/0x800
+        offsets.append(to_int(fhd,4)) # e724 - offset/0x800 (0x800 = 1 DVD sector)
 
 
 
@@ -191,7 +191,7 @@ else:
             file = File()
             file.size =0xffffffff
             file.type = 0xff
-            file.offset = 0xfffffffe
+            file.offset = 0xffffffff
 
             fhd.seek(pathpathptr+i*8)
 
@@ -213,14 +213,13 @@ else:
                 file.type = typeToByte[ext[1]]
 
                 offset = totalsize
-                blocks = 0
+                sectors = 0
                 print(totalsize)
                 while True:
-                    blocks+=1
-                    if blocks*0x800 > file.size:
-                        offset+=blocks*0x800
+                    sectors+=1
+                    if sectors*0x800 > file.size:
+                        offset+=sectors*0x800
                         break
-                print(blocks,"blokk",hex(totalsize),hex(file.size))
                 file.offset = offset
                 data = fbuf.read(file.size)
 
@@ -253,7 +252,7 @@ else:
         unk_ptr = new_fhd.tell()
         print("Writing new FHD unks...")           
         for file in files:
-            new_fhd.write(struct.pack("<I",file.size*2 if file.size != 0xffffffff else 0xffffffff))  
+            new_fhd.write(struct.pack("<I",file.size*2 if file.size != 0xffffffff else 0xfffffffe))  
 
         offsets_ptr = new_fhd.tell()
         for i in range(0,filecount):
